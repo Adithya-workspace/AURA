@@ -1,0 +1,25 @@
+{
+  "name": "aura",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AURA — Autonomous Unified Response Agent",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w server && npm run build -w client",
+    "start": "npm run start -w server",
+    "smoke": "npm run smoke -w server",
+    "test": "npm run test -w server && npm run test -w client",
+    "lint": "npm run lint -w server && npm run lint -w client"
+  },
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

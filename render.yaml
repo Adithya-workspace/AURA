@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: aura-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AI_PROVIDER
+        value: mock
+      - key: DEMO_PACING
+        value: normal
+      - key: CORS_ORIGIN
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: AURA_DB_PATH
+        value: /tmp/aura.sqlite
