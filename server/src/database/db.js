@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
+import Database from 'libsql';
 import { env } from '../config/env.js';
 import { log } from '../utils/logger.js';
 
@@ -20,6 +21,24 @@ function resolveDbPath() {
 function wrapBetter(db) {
   return {
     kind: 'better-sqlite3',
+    exec(sql) {
+      db.exec(sql);
+    },
+    run(sql, params = []) {
+      db.prepare(sql).run(...params);
+    },
+    all(sql, params = []) {
+      return db.prepare(sql).all(...params);
+    },
+    get(sql, params = []) {
+      return db.prepare(sql).get(...params);
+    },
+  };
+}
+
+function wrapLibsql(db) {
+  return {
+    kind: 'libsql',
     exec(sql) {
       db.exec(sql);
     },
@@ -72,18 +91,28 @@ async function wrapSqlJs(dbPath) {
 
 export async function initDb() {
   if (handle) return handle;
-  const dbPath = resolveDbPath();
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  try {
-    const Database = require('better-sqlite3');
-    const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    handle = wrapBetter(db);
-    log('info', `sqlite engine better-sqlite3 at ${dbPath}`);
-  } catch (error) {
-    handle = await wrapSqlJs(dbPath);
-    log('warn', 'better-sqlite3 unavailable, using sql.js', { reason: error.message });
+  const tursoUrl = env.TURSO_DATABASE_URL?.trim();
+  const tursoToken = env.TURSO_AUTH_TOKEN?.trim();
+
+  if (tursoUrl) {
+    const db = new Database(tursoUrl, { authToken: tursoToken || undefined });
+    handle = wrapLibsql(db);
+    log('info', `sqlite engine libsql at ${tursoUrl}`);
+  } else {
+    const dbPath = resolveDbPath();
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    try {
+      const BetterSqlite = require('better-sqlite3');
+      const db = new BetterSqlite(dbPath);
+      db.pragma('journal_mode = WAL');
+      handle = wrapBetter(db);
+      log('info', `sqlite engine better-sqlite3 at ${dbPath}`);
+    } catch (error) {
+      handle = await wrapSqlJs(dbPath);
+      log('warn', 'better-sqlite3 unavailable, using sql.js', { reason: error.message });
+    }
   }
+
   const schema = fs.readFileSync(path.join(here, 'schema.sql'), 'utf8');
   handle.exec(schema);
   for (const [column, type] of [['service', 'TEXT'], ['environment', 'TEXT'], ['timeframe', 'TEXT']]) {

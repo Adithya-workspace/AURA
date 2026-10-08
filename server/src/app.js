@@ -11,6 +11,7 @@ import { apiRouter } from './routes/api.js';
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', 1);
   app.use(requestId);
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors({ origin: env.CORS_ORIGIN.split(',').map((item) => item.trim()) }));
