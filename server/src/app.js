@@ -7,12 +7,21 @@ import { requestId } from './middleware/requestId.js';
 import { notFound } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/api.js';
+import { initDb } from './database/db.js';
 
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
   app.use(requestId);
+  app.use(async (_req, _res, next) => {
+    try {
+      await initDb();
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors({ origin: env.CORS_ORIGIN.split(',').map((item) => item.trim()) }));
   app.use(express.json({ limit: '256kb' }));

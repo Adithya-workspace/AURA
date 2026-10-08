@@ -6,6 +6,14 @@ import Database from 'libsql';
 import { env } from '../config/env.js';
 import { log } from '../utils/logger.js';
 
+function safeErrorMessage(error, tursoUrl = '', tursoToken = '') {
+  const raw = error?.message || String(error || 'unknown database error');
+  let message = raw;
+  if (tursoUrl) message = message.replaceAll(tursoUrl, '[redacted-url]');
+  if (tursoToken) message = message.replaceAll(tursoToken, '[redacted-token]');
+  return message;
+}
+
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -91,35 +99,52 @@ async function wrapSqlJs(dbPath) {
 
 export async function initDb() {
   if (handle) return handle;
+
   const tursoUrl = env.TURSO_DATABASE_URL?.trim();
   const tursoToken = env.TURSO_AUTH_TOKEN?.trim();
 
-  if (tursoUrl) {
-    const db = new Database(tursoUrl, { authToken: tursoToken || undefined });
-    handle = wrapLibsql(db);
-    log('info', `sqlite engine libsql at ${tursoUrl}`);
-  } else {
-    const dbPath = resolveDbPath();
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    try {
-      const BetterSqlite = require('better-sqlite3');
-      const db = new BetterSqlite(dbPath);
-      db.pragma('journal_mode = WAL');
-      handle = wrapBetter(db);
-      log('info', `sqlite engine better-sqlite3 at ${dbPath}`);
-    } catch (error) {
-      handle = await wrapSqlJs(dbPath);
-      log('warn', 'better-sqlite3 unavailable, using sql.js', { reason: error.message });
-    }
-  }
+  log('info', `[Turso] URL configured: ${Boolean(tursoUrl)}`);
+  log('info', `[Turso] auth token configured: ${Boolean(tursoToken)}`);
 
-  const schema = fs.readFileSync(path.join(here, 'schema.sql'), 'utf8');
-  handle.exec(schema);
-  for (const [column, type] of [['service', 'TEXT'], ['environment', 'TEXT'], ['timeframe', 'TEXT']]) {
-    const cols = handle.all('PRAGMA table_info(incidents)');
-    if (!cols.some((col) => col.name === column)) handle.run(`ALTER TABLE incidents ADD COLUMN ${column} ${type}`);
+  try {
+    if (tursoUrl) {
+      log('info', '[Turso] client creation: started');
+      const db = new Database(tursoUrl, { authToken: tursoToken || undefined });
+      handle = wrapLibsql(db);
+      log('info', '[Turso] client creation: success');
+      log('info', '[Turso] connection test: started');
+      await handle.run('SELECT 1');
+      log('info', '[Turso] connection test: success');
+    } else {
+      const dbPath = resolveDbPath();
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      try {
+        const BetterSqlite = require('better-sqlite3');
+        const db = new BetterSqlite(dbPath);
+        db.pragma('journal_mode = WAL');
+        handle = wrapBetter(db);
+        log('info', `sqlite engine better-sqlite3 at ${dbPath}`);
+      } catch (error) {
+        handle = await wrapSqlJs(dbPath);
+        log('warn', 'better-sqlite3 unavailable, using sql.js', { reason: error.message });
+      }
+    }
+
+    const schema = fs.readFileSync(path.join(here, 'schema.sql'), 'utf8');
+    log('info', '[Turso] schema initialization: started');
+    handle.exec(schema);
+    log('info', '[Turso] schema initialization: success');
+
+    for (const [column, type] of [['service', 'TEXT'], ['environment', 'TEXT'], ['timeframe', 'TEXT']]) {
+      const cols = handle.all('PRAGMA table_info(incidents)');
+      if (!cols.some((col) => col.name === column)) handle.run(`ALTER TABLE incidents ADD COLUMN ${column} ${type}`);
+    }
+    return handle;
+  } catch (error) {
+    const message = safeErrorMessage(error, tursoUrl, tursoToken);
+    log('error', `[Turso] initialization failed: ${message}`);
+    throw error;
   }
-  return handle;
 }
 
 export function db() {
