@@ -6,12 +6,17 @@ import { initDb } from './database/db.js';
 import { markOrphans, seed } from './database/seed.js';
 import { log } from './utils/logger.js';
 
-export async function start() {
+export const app = createApp();
+
+export async function boot() {
   await initDb();
   const orphans = markOrphans();
   if (orphans) log('warn', 'marked interrupted runs', { orphans });
   seed();
-  const app = createApp();
+}
+
+export async function start() {
+  await boot();
   const server = await new Promise((resolve) => {
     const listener = app.listen(env.PORT, () => resolve(listener));
   });
@@ -20,9 +25,15 @@ export async function start() {
 }
 
 const entry = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : '';
-if (import.meta.url === entry) {
+if (process.env.VERCEL) {
+  boot().catch((error) => {
+    log('error', 'failed to initialize app', { message: error.message });
+  });
+} else if (import.meta.url === entry) {
   start().catch((error) => {
     log('error', 'failed to start', { message: error.message });
     process.exit(1);
   });
 }
+
+export default app;
